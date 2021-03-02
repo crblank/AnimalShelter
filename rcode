@@ -1,0 +1,409 @@
+R Code
+#########################################################
+##### IMPORT CLEAN DATA
+#########################################################
+#install needed libraries
+library(tidyverse)
+library(readxl)
+#library(ggplot2) #in tidyverse
+#library(dplyr)  #in tidyverse
+library(hrbrthemes)
+#library(forcats) #in tidyverse
+library(Hmisc)
+library(skimr)
+library(summarytools)
+library(lubridate)
+library(olsrr) # ended up not using this - test took too long to run
+library(caret)
+library(leaps)
+library(MASS)
+library(zoo)
+library(lubridate)
+library(cluster)
+library(Rtsne)
+library(tree)
+######################
+#animals = read_excel("~/Desktop/Capstone_Data.xlsx", 
+#                     col_types = c("text", "text", "skip", "date", "text", "text", "text", "text", "text", "numeric", "text",
+"numeric", "text", "text", "text", "date", "date", "text", "text", "text", "text", "text", "numeric"))
+# cleaned data - contains NAs rather than Nulls
+animals = read_excel("~/Desktop/Capstone_Data_Cleaned.xlsx", 
+                     col_types = c("text", "text", "date", "text", "text", "text", "text", "text", "numeric", "text", "numeric",
+                     "text", "text", "text", "date", "date", "text", "text", "text", "text", "text", "numeric"))
+# final cleaned data - created some logical variables. In the future, some of these variables could be created within R
+animals_clean <- read_excel("~/Desktop/Capstone_Data_Cleaned_FINAL.xlsx", col_types = c("text", "text", "date", "text", "numeric", "numeric", "numeric", "text", "text", "text", "numeric", "numeric", "text", "numeric", "text", 
+                                          "text", "date", "date", "text", "numeric", "numeric", "numeric", "skip", 
+                                          "numeric"))
+View(animals_clean)
+# excludes Dallas due to lack of fields in data
+animals_sub <- read_excel("~/Desktop/Capstone_Data_Cleaned_FINAL_noDallas.xlsx", 
+                          col_types = c("text", "text", "date", "text", "numeric", "numeric", "numeric", 
+                                        "text", "text", "text", "numeric", "numeric", "text", "numeric", "text", 
+                                        "text", "date", "date", "text", "numeric", "numeric", "numeric", "skip", 
+                                        "numeric"))
+animals_sub_noBreed <- read_excel("~/Desktop/Capstone_Data_Cleaned_FINAL_noDallas.xlsx", 
+                          col_types = c("text", "text", "date", "text", "numeric", "numeric", "numeric", 
+                                        "text", "text", "text", "numeric", "numeric", "skip", "numeric", "text", 
+                                        "text", "date", "date", "text", "numeric", "numeric", "numeric", "skip", 
+                                        "numeric"))
+
+########################################################
+## INITIALLY LOOKING AT DATA TO SEE BASIC INFORMATION ##
+########################################################
+View(animals_sub_noBreed)
+View(animals) 
+dim(animals)
+names(animals)
+attach(animals)
+View(animals_sub)
+dim(animals_clean)
+dim(animals_sub)
+
+table(ShelterName, AnimalType)
+table(ShelterName,AnimalType,IntakeType)
+table(ShelterName,AnimalType,IntakeSex)
+tbl1<-table(ShelterName,AnimalType,IntakeSex)
+ftable(tbl1)
+
+#proportions
+table1<-table(Breed)
+prop.table(table1)
+
+table2<-table(IntakeType)
+prop.table(table2)
+table(IntakeType,OutcomeType)
+table(IntakeType,IntakeCondition)
+
+table(AnimalType,Mix)
+
+Hmisc::describe(animals)
+skim(animals)
+summarytools::descr(animals, transpose=TRUE)
+view(dfSummary(animals))
+
+# length of stay
+mean(animals$DaysInShelter)
+median(animals$DaysInShelter, na.rm=FALSE)
+
+#graphs
+#available colors
+grDevices::colors()
+
+ggplot(animals,aes(x=factor(OutcomeType)))+geom_bar(fill="blue")+theme_classic()
+
+# Step 1
+animals_new <- animals  %>% 
+  #Step 2
+  mutate(animals_new = factor(AnimalType,labels=c("CAT","DOG")),
+         OutcomeType = factor(OutcomeType),
+         IntakeType = factor(IntakeType), 
+         Breed=factor(Breed))
+
+tiff("graph1.tiff", units="in", width=5, height=5, res=300)
+
+# re-order levels
+reorder_size <- function(x) {
+  factor(x, levels = names(sort(table(x), decreasing = TRUE)))
+}
+ggplot(animals_new, aes(x = reorder_size(`OutcomeType`),fill=AnimalType)) +
+  geom_bar() +
+  xlab("OutcomeType") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+dev.off()
+
+names(animals_new)
+tiff("graph2.tiff", units="in", width=5, height=5, res=300)
+ggplot(animals_new, aes(x = reorder_size(`IntakeType`),fill=AnimalType)) +
+  geom_bar() +
+  xlab("Intake Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+dev.off()
+
+df_animals <- animals %>% 
+  dplyr::filter(AnimalType == "DOG") %>%
+  group_by(Breed) %>% 
+  mutate(group_num = n())
+table(df_animals$group_num)#to view the distribution
+tiff("graph3.tiff", units="in", width=5, height=5, res=300)
+ggplot(subset(df_animals, group_num >= 2700, fill=ShelterName)) +
+  geom_bar(aes(fct_infreq(Breed), fill=ShelterName), stat = 'count') +
+  xlab("Breed")+theme(axis.text.x=element_text(angle=90))
+dev.off()
+
+tiff("graph4.tiff", units="in", width=5, height=5, res=300)
+ggplot(animals,aes(x=AnimalType, fill=ShelterName))+
+  geom_bar()+theme_classic()
+dev.off()
+#########################################################
+#top 10 dog breeds taken in to shelter
+DogBreed <- filter(animals, Breed == "PIT BULL" | Breed == "CHIHUAHUA" |
+                     Breed == "LABRADOR RETRIEVER" | Breed == "GERMAN SHEPHERD" |
+                     Breed == "CAIRN TERRIER" | Breed == "AUSTRALIAN CATTLE DOG" |
+                     Breed == "DACHSHUND" | Breed == "BOXER" |
+                     Breed == "ROTTWEILER" | Breed == "SHIH TZU")
+dim(DogBreed)
+# set up training and testing data
+dt = sort(sample(nrow(animals), nrow(animals)*.7))
+train<-animals[dt,]
+test<-animals[-dt,]
+View(train)
+View(test)
+names(train)
+
+#LOGISTIC REGRESSION
+glm.fits=glm(DaysInShelter~., data=train)
+summary(glm.fits)
+
+glm.fits=glm(DaysInShelter~factor(ShelterName)+factor(IntakeType)+factor(AnimalType)+
+               factor(IntakeSex)+IntakeAge+factor(Breed)+factor(Mix)+factor(PrimaryColor)+
+               factor(Size), data=train)
+summary(glm.fits)
+glm.fits$coefficients
+
+# multiple linear regression
+full.model <- lm(DaysInShelter~factor(ShelterName)+factor(IntakeType)+factor(AnimalType)+
+                   factor(IntakeSex)+IntakeAge+factor(Breed)+factor(Mix)+factor(PrimaryColor)+
+                   factor(Size)+factor(OutcomeType), data = animals)
+summary(full.model) 
+
+# Stepwise regression model
+step.model <- stepAIC(full.model, direction = "both")
+step.model$anova
+summary(step.model)
+step.model$fitted.values
+
+data.train<-na.omit(train)
+animal.model <- lm(DaysInShelter~ShelterName+IntakeType+AnimalType+
+                     IntakeSex+IntakeAge+Breed+Mix+PrimaryColor+Size+OutcomeType,
+                   data = data.train)
+# Stepwise regression model
+stepanimal.model <- stepAIC(animal.model, direction = "backward", 
+                            trace = FALSE)
+summary(stepanimal.model)
+stepanimal.model$anova
+
+#mean days in shelter
+tapply(DaysInShelter,ShelterName, mean)
+tapply(DaysInShelter,AnimalType, mean)
+animals
+
+
+set.seed(2015)
+monyr<-as.yearmon(train$IntakeDate)
+monyr_animal<-as.yearmon(animals$IntakeDate)
+View(monyr_animal)
+
+lst <- lapply(list(monyr), function(x)
+  transform(train, Count=ave(seq_along(x), x, FUN= length)))
+names(lst) <- paste0('train_new', seq_along(lst))
+list2env(lst, envir=.GlobalEnv)
+View(lst)
+View(monyr)
+
+train_ts <- ts(lst, start=c(2015,5), frequency=12)
+summary(train_ts)
+
+# plot training data
+plot(train_ts$train_new1$IntakeDate, train_ts$train_new1$Count,
+     xlab="Month/year starting 5/2015, ending 4/2020", 
+     ylab="Number of animals", col="blue")
+plot.ts(train_ts$train_new1$IntakeDate, train_ts$train_new1$Count)
+table(format(train$IntakeDate,"%b-%Y"))
+
+# run with full data
+lstfull <- lapply(list(monyr_animal), function(x) 
+  transform(animals, Count=ave(seq_along(x), x, FUN= length)))
+names(lstfull) <- paste0('animals', seq_along(lstfull))
+View(lstfull)
+summary(lstfull)
+animal_ts <- ts(lstfull, start=c(2015,5), frequency=12)
+summary(animal_ts)
+View(animal_ts)
+#plot fulldata
+tiff("TimeSeries1.tiff", units="in", width=5, height=5, res=300)
+plot(animal_ts$animals1$IntakeDate, animal_ts$animals1$Count,
+     xlab="Month/year starting 5/2015, ending 4/2020", 
+     ylab="Number of animals", col="aquamarine2")
+dev.off()
+
+###############################
+# switch to using animals_clean dataframe - changed some variables
+# set up training and testing data with animals clean dataset
+dt = sort(sample(nrow(animals_clean), nrow(animals_clean)*.7))
+train<-animals_clean[dt,]
+test<-animals_clean[-dt,]
+
+data.train<-na.omit(train)
+View(train)
+View(data.train)
+View(test)
+names(train)
+attach(data.train)
+
+tree.animals=tree(OT_EUTH~IntakeType+AnimalType+SEX+Animal_Fixed+IntakeAge
+                  +Breed+Mix+PrimaryColor+Size+DaysInShelter,data.train)
+summary(tree.animals)
+
+jpeg("Tree.jpg")
+plot(tree.animals)
+text(tree.animals,pretty=0)
+dev.off()
+tree.animals
+
+
+detach(data.train)
+detach(animals)
+search()
+attach(train)
+tree.animals2=tree(OT_EUTH~IntakeType+AnimalType+SEX+Animal_Fixed+IntakeAge
+                   +Breed+Mix+PrimaryColor+Size+DaysInShelter,train)
+summary(tree.animals2)
+
+jpeg("Tree2.jpg")
+plot(tree.animals2)
+text(tree.animals2,pretty=0)
+dev.off()
+tree.animals2
+
+tree.animals3=tree(OT_EUTH~.-OT_ADOPT-OT_OTHER-DaysInShelter,train)
+summary(tree.animals3)
+jpeg("Tree3.jpg")
+plot(tree.animals3)
+text(tree.animals3,pretty=0)
+dev.off()
+tree.animals3
+names(train)
+
+# what affects the adoptability
+tree.animalsAdopt = tree(OT_ADOPT~.-OT_EUTH-OT_OTHER, train)
+summary(tree.animalsAdopt)
+jpeg("TreeAdopt.jpg")
+plot(tree.animalsAdopt)
+text(tree.animalsAdopt,pretty=0)
+dev.off()
+tree.animalsAdopt
+
+# set up training and testing data with animals sub dataset
+dt2 = sort(sample(nrow(animals_sub), nrow(animals_sub)*.7))
+train2<-animals_sub[dt2,]
+test2<-animals_sub[-dt2,]
+data.train2<-na.omit(train2)
+
+tree.animals4=tree(OutcomeType~IntakeType+AnimalType+SEX+Animal_Fixed+IntakeAge+Breed
+                   +Mix+PrimaryColor+Size,train2)
+summary(tree.animals4)
+tree.animals4
+# previous didn't work - skip it
+
+#check animalsAdopt
+pred_animalsAdopt = predict(tree.animalsAdopt,test)
+table_mat <- table(test$OT_ADOPT, pred_animalsAdopt)
+summary(table_mat)
+table_mat
+View(table_mat)
+
+tree.animalsAdopt
+names(train)
+
+library(randomForest)
+search()
+detach(train)
+attach(data.train2)
+model <- randomForest(y=as.factor(OutcomeType),x=cbind(as.factor(ShelterName),as.factor(IntakeType), as.factor(AnimalType),
+                                                       as.factor(SEX), as.logical(Animal_Fixed), as.numeric(IntakeAge),
+                                                       as.factor(Breed), as.logical(Mix),as.factor(PrimaryColor), as.factor(Size),
+                                                       as.numeric(DaysInShelter)),ntree=10, localImp = TRUE)
+model1 <- randomForest(y=as_factor(OutcomeType),x=cbind(as_factor(ShelterName),as_factor(IntakeType), as_factor(AnimalType),
+                                               as_factor(SEX), as_factor(Animal_Fixed), as.numeric(IntakeAge),
+                                               as_factor(Breed), as.logical(Mix), as_factor(PrimaryColor), as_factor(Size),
+                                              as.numeric(DaysInShelter)),ntree=10, localImp = TRUE)
+
+#plot of model accuracy by class
+plot(model,xlab="Trees", ylab="Classification Error", main="Random Forest Model",)
+model$confusion
+
+library(randomForestExplainer)
+min_depth_frame = min_depth_distribution(model)
+save(min_depth_frame, file = "min_depth_frame.rda")
+load("min_depth_frame.rda")
+head(min_depth_frame, n = 10)
+plot_min_depth_distribution(min_depth_frame)
+explain_forest(model)
+
+plot(model1, main = "Random Forest Model")
+model1$confusion
+
+min_depth_frame1 = min_depth_distribution(model1)
+save(min_depth_frame1, file = "min_depth_frame1.rda")
+load("min_depth_frame1.rda")
+head(min_depth_frame1, n = 10)
+plot_min_depth_distribution(min_depth_frame1)
+explain_forest(model1)
+
+#####
+dt3 = sort(sample(nrow(animals_sub_noBreed), nrow(animals_sub_noBreed)*.7))
+train3<-animals_sub_noBreed[dt3,]
+test3<-animals_sub_noBreed[-dt3,]
+
+data.train3<-na.omit(train3)
+data.test3<-na.omit(test3)
+
+model3 <- randomForest(y=as_factor(OutcomeType),x=cbind(as_factor(ShelterName),as_factor(IntakeType), as_factor(AnimalType),
+                                                        as_factor(SEX), as_factor(Animal_Fixed), as.numeric(IntakeAge),
+                                                        as.logical(Mix), as_factor(PrimaryColor), as_factor(Size),
+                                                        as.numeric(DaysInShelter)),ntree=10, localImp = TRUE, data=data.train3)
+print(model3)
+plot(model3, main = "Random Forest Model")
+
+jpeg("rf3.jpg", units="in", width=25, height=5, res=500)
+layout(matrix(c(1,2),nrow=1),
+       width=c(4,1)) 
+#par(c(5.1, 4.1, 4.1, 2.1))
+par(mar=c(5,4,4,0)) #No margin on the right side
+plot(model3, log="y", main = "Random Forest Model")
+par(mar=c(5,0,4,2)) #No margin on the left side
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("bottomleft", colnames(model3$err.rate),col=1:11,cex=0.8, inset=(0.5),lty=1:11,xpd=TRUE)
+dev.off()
+
+jpeg("rf4.jpg", units="in", width=5, height=5, res=500)
+layout(matrix(c(1,2),nrow=1),
+       width=c(4,1)) 
+#par(c(5.1, 4.1, 4.1, 2.1))
+par(mar=c(5,4,4,0)) #No margin on the right side
+plot(model3, log="y", main = "Random Forest Model")
+dev.off()
+
+model3$err.rate
+
+
+model3$confusion
+
+min_depth_frame3 = min_depth_distribution(model3)
+save(min_depth_frame3, file = "min_depth_frame3.rda")
+load("min_depth_frame3.rda")
+head(min_depth_frame3, n = 20)
+plot_min_depth_distribution(min_depth_frame3)
+explain_forest(model3)
+
+model3$call
+model3$type
+model3$predicted
+model3$err.rate
+model3$confusion
+model3$votes
+model3$oob.times
+model3$classes
+model3$importance
+model3$importanceSD
+model3$localImportance
+model3$proximity
+model3$ntree
+model3$mtry
+model3$forest
+model3$y
+model3$test
+model3$inbag
+animals.rf <- randomForest(OutcomeType~factor(ShelterName)+factor(IntakeType)+factor(AnimalType)+factor(SEX)+factor(Animal_Fixed)+IntakeAge
+                           +factor(Mix)+factor(PrimaryColor)+factor(Size)+DaysInShelter, 
+                           data = data.train2, importance = TRUE, proximity = TRUE, type="class")
